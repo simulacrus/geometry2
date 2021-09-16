@@ -28,157 +28,317 @@
  */
 
 #include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Vector3.h>
 
 #include <rclcpp/rclcpp.hpp>
 #include <tf2_ros/static_transform_broadcaster_node.hpp>
 
 #include <cstdio>
 #include <memory>
+#include <stdexcept>
 #include <string>
-#include <unordered_map>
-#include <utility>
 #include <vector>
 
-std::unordered_map<std::string, std::string> _make_arg_map(std::vector<std::string> && args)
+static std::string parse_args(
+  const std::vector<std::string> & args,
+  bool & help,
+  tf2::Quaternion & quat,
+  tf2::Vector3 & trans,
+  std::string & frame_id,
+  std::string & child_frame_id)
 {
-  std::unordered_map<std::string, std::string> ret;
-  /* collect from [exe] --option1 value --option2 value ... --optionN value */
-  for (size_t x = 1; x < args.size(); x += 2) {
-    ret.emplace(std::move(args[x]), std::move(args[x + 1]));
+  size_t size = args.size();
+  size_t last_index = size - 1;
+
+  bool saw_quat_flag = false;
+  bool saw_rpy_flag = false;
+  double roll = 0.0;
+  double pitch = 0.0;
+  double yaw = 0.0;
+
+  bool saw_trans_flag = false;
+
+  bool saw_frame_flag = false;
+
+  std::vector<std::string> no_flag_args;
+
+  if (size < 1) {
+    return "Not enough arguments to parse";
   }
-  return ret;
+
+  help = false;
+
+  size_t i = 1;
+  while (i < size) {
+    if (args[i] == "-h" || args[i] == "--help") {
+      help = true;
+      return "";
+    } else if (args[i] == "--qx") {
+      if (i == last_index) {
+        return "Not enough arguments for --qx";
+      }
+
+      saw_quat_flag = true;
+      try {
+        quat.setX(std::stod(args[++i]));
+      } catch (const std::invalid_argument & e) {
+        return "Failed to parse --qx argument as float";
+      }
+    } else if (args[i] == "--qy") {
+      if (i == last_index) {
+        return "Not enough arguments for --qy";
+      }
+
+      saw_quat_flag = true;
+      try {
+        quat.setY(std::stod(args[++i]));
+      } catch (const std::invalid_argument & e) {
+        return "Failed to parse --qy argument as float";
+      }
+    } else if (args[i] == "--qz") {
+      if (i == last_index) {
+        return "Not enough arguments for --qz";
+      }
+
+      saw_quat_flag = true;
+      try {
+        quat.setZ(std::stod(args[++i]));
+      } catch (const std::invalid_argument & e) {
+        return "Failed to parse --qz argument as float";
+      }
+    } else if (args[i] == "--qw") {
+      if (i == last_index) {
+        return "Not enough arguments for --qw";
+      }
+
+      saw_quat_flag = true;
+      try {
+        quat.setW(std::stod(args[++i]));
+      } catch (const std::invalid_argument & e) {
+        return "Failed to parse --qw argument as float";
+      }
+    } else if (args[i] == "--roll") {
+      if (i == last_index) {
+        return "Not enough arguments for --roll";
+      }
+
+      saw_rpy_flag = true;
+      try {
+        roll = std::stod(args[++i]);
+      } catch (const std::invalid_argument & e) {
+        return "Failed to parse --roll argument as float";
+      }
+    } else if (args[i] == "--pitch") {
+      if (i == last_index) {
+        return "Not enough arguments for --pitch";
+      }
+
+      saw_rpy_flag = true;
+      try {
+        pitch = std::stod(args[++i]);
+      } catch (const std::invalid_argument & e) {
+        return "Failed to parse --pitch argument as float";
+      }
+    } else if (args[i] == "--yaw") {
+      if (i == last_index) {
+        return "Not enough arguments for --yaw";
+      }
+
+      saw_rpy_flag = true;
+      try {
+        yaw = std::stod(args[++i]);
+      } catch (const std::invalid_argument & e) {
+        return "Failed to parse --yaw argument as float";
+      }
+    } else if (args[i] == "--x") {
+      if (i == last_index) {
+        return "Not enough arguments for --x";
+      }
+
+      saw_trans_flag = true;
+      try {
+        trans.setX(std::stod(args[++i]));
+      } catch (const std::invalid_argument & e) {
+        return "Failed to parse --x argument as float";
+      }
+    } else if (args[i] == "--y") {
+      if (i == last_index) {
+        return "Not enough arguments for --y";
+      }
+
+      saw_trans_flag = true;
+      try {
+        trans.setY(std::stod(args[++i]));
+      } catch (const std::invalid_argument & e) {
+        return "Failed to parse --y argument as float";
+      }
+    } else if (args[i] == "--z") {
+      if (i == last_index) {
+        return "Not enough arguments for --z";
+      }
+
+      saw_trans_flag = true;
+      try {
+        trans.setZ(std::stod(args[++i]));
+      } catch (const std::invalid_argument & e) {
+        return "Failed to parse --z argument as float";
+      }
+    } else if (args[i] == "--frame-id") {
+      if (i == last_index) {
+        return "Not enough arguments for --frame-id";
+      }
+
+      saw_frame_flag = true;
+      frame_id = args[++i];
+    } else if (args[i] == "--child-frame-id") {
+      if (i == last_index) {
+        return "Not enough arguments for --child-frame-id";
+      }
+
+      saw_frame_flag = true;
+      child_frame_id = args[++i];
+    } else {
+      no_flag_args.push_back(args[i]);
+    }
+
+    ++i;
+  }
+
+  if (saw_rpy_flag && saw_quat_flag) {
+    return "Cannot specify both quaternion and Euler rotations";
+  } else if (saw_rpy_flag) {
+    quat.setRPY(roll, pitch, yaw);
+  }
+
+  if (no_flag_args.size() == 8 || no_flag_args.size() == 9) {
+    RCUTILS_LOG_WARN("Old-style arguments are deprecated; see --help for new-style arguments");
+    if (saw_frame_flag || saw_trans_flag || saw_quat_flag) {
+      return "Cannot specify both new-style (flags) and old-style (arguments)";
+    }
+    try {
+      trans.setX(std::stod(no_flag_args[0]));
+    } catch (const std::invalid_argument & e) {
+      return "Failed to parse X argument as float";
+    }
+    try {
+      trans.setY(std::stod(no_flag_args[1]));
+    } catch (const std::invalid_argument & e) {
+      return "Failed to parse Y argument as float";
+    }
+    try {
+      trans.setZ(std::stod(no_flag_args[2]));
+    } catch (const std::invalid_argument & e) {
+      return "Failed to parse Z argument as float";
+    }
+
+    if (no_flag_args.size() == 8) {
+      try {
+        yaw = std::stod(no_flag_args[3]);
+      } catch (const std::invalid_argument & e) {
+        return "Failed to parse yaw argument as float";
+      }
+      try {
+        pitch = std::stod(no_flag_args[4]);
+      } catch (const std::invalid_argument & e) {
+        return "Failed to parse pitch argument as float";
+      }
+      try {
+        roll = std::stod(no_flag_args[5]);
+      } catch (const std::invalid_argument & e) {
+        return "Failed to parse roll argument as float";
+      }
+
+      quat.setRPY(roll, pitch, yaw);
+      frame_id = no_flag_args[6];
+      child_frame_id = no_flag_args[7];
+    } else {
+      try {
+        quat.setX(std::stod(no_flag_args[3]));
+      } catch (const std::invalid_argument & e) {
+        return "Failed to parse qx argument as float";
+      }
+      try {
+        quat.setY(std::stod(no_flag_args[4]));
+      } catch (const std::invalid_argument & e) {
+        return "Failed to parse qy argument as float";
+      }
+      try {
+        quat.setZ(std::stod(no_flag_args[5]));
+      } catch (const std::invalid_argument & e) {
+        return "Failed to parse qz argument as float";
+      }
+      try {
+        quat.setW(std::stod(no_flag_args[6]));
+      } catch (const std::invalid_argument & e) {
+        return "Failed to parse qw argument as float";
+      }
+      frame_id = no_flag_args[7];
+      child_frame_id = no_flag_args[8];
+    }
+  } else if (no_flag_args.size() != 0) {
+    return "Extra unparsed arguments on command-line";
+  }
+
+  if (frame_id == "") {
+    return "Frame id must not be empty";
+  }
+
+  if (child_frame_id == "") {
+    return "Child frame id must not be empty";
+  }
+
+  return "";
 }
 
-void _print_usage()
+static void _print_usage()
 {
   const char * usage =
-    "usage: static_transform_publisher [--x X] [--y Y] [--z Z] [--qx QX] [--qy QY]"
-    "[--qz QZ] [--qw QW] [--roll ROLL] [--pitch PITCH] [--yaw YAW] --frame-id FRAME_ID"
+    "usage: static_transform_publisher [--x X] [--y Y] [--z Z] [--qx QX] [--qy QY] "
+    "[--qz QZ] [--qw QW] [--roll ROLL] [--pitch PITCH] [--yaw YAW] --frame-id FRAME_ID "
     "--child-frame-id CHILD_FRAME_ID\n\n"
     "A command line utility for manually sending a static transform.\n\nIf no translation or"
     " orientation is provided, the identity transform will be published.\n\nThe translation offsets"
-    " are in meters.\n\nThe rotation may be provided as with roll, pitch, yaw euler angles"
-    " (radians), or as a quaternion.\n\n"
+    " are in meters.\n\nThe rotation may be provided with roll, pitch, yaw euler angles in radians,"
+    " or as a quaternion.\n\n"
     "required arguments:\n"
     "  --frame-id FRAME_ID parent frame\n"
     "  --child-frame-id CHILD_FRAME_ID child frame id\n\n"
     "optional arguments:\n"
-    "  --x X                 x component of a vector represention the translation\n"
-    "  --y Y                 y component of a vector represention of the translation\n"
-    "  --z Z                 z component of a vector represention of the translation\n"
-    "  --qx QX               x component of a quaternion represention of the rotation\n"
-    "  --qy QY               y component of a quaternion representation of the rotation\n"
-    "  --qz QZ               z component of a quaternion representation of the rotation\n"
-    "  --qw QW               w component of a quaternion representation of the rotation\n"
-    "  --roll ROLL           roll component of an Euler representation of the rotation (RPY)\n"
-    "  --pitch PITCH         pitch component of an Euler representation of the rotation (RPY)\n"
-    "  --yaw YAW             yaw component of an Euler representation of the rotation (RPY)";
+    "  --x X                 x component of translation\n"
+    "  --y Y                 y component of translation\n"
+    "  --z Z                 z component of translation\n"
+    "  --qx QX               x component of quaternion rotation\n"
+    "  --qy QY               y component of quaternion rotation\n"
+    "  --qz QZ               z component of quaternion rotation\n"
+    "  --qw QW               w component of quaternion rotation\n"
+    "  --roll ROLL           roll component Euler rotation\n"
+    "  --pitch PITCH         pitch component Euler rotation\n"
+    "  --yaw YAW             yaw component Euler rotation";
   printf("%s\n", usage);
-}
-
-tf2::Quaternion _get_rotation(const std::unordered_map<std::string, std::string> & args)
-{
-  tf2::Quaternion quat;
-  bool found_quaternion = false;
-  bool found_rpy = false;
-  auto iter = args.find("--qx");
-  if (iter != args.end()) {
-    quat.setX(std::stod(iter->second));
-    found_quaternion = true;
-  }
-  iter = args.find("--qy");
-  if (iter != args.end()) {
-    quat.setY(std::stod(iter->second));
-    found_quaternion = true;
-  }
-  iter = args.find("--qz");
-  if (iter != args.end()) {
-    quat.setZ(std::stod(iter->second));
-    found_quaternion = true;
-  }
-  iter = args.find("--qw");
-  if (iter != args.end()) {
-    quat.setW(std::stod(iter->second));
-    found_quaternion = true;
-  }
-  /* otherwise, look for roll, pitch, yaw */
-  double roll = 0.0;
-  double pitch = 0.0;
-  double yaw = 0.0;
-  iter = args.find("--roll");
-  if (iter != args.end()) {
-    roll = std::stod(iter->second);
-    found_rpy = true;
-  }
-  iter = args.find("--pitch");
-  if (iter != args.end()) {
-    pitch = std::stod(iter->second);
-    found_rpy = true;
-  }
-  iter = args.find("--yaw");
-  if (iter != args.end()) {
-    yaw = std::stod(iter->second);
-    found_rpy = true;
-  }
-  if (found_quaternion && found_rpy) {
-    RCUTILS_LOG_ERROR("cannot mix euler and quaternion arguments");
-    _print_usage();
-    exit(1);
-  } else if (!found_quaternion) {
-    quat.setRPY(roll, pitch, yaw);
-  }
-  return quat;
-}
-
-tf2::Vector3 _get_translation(const std::unordered_map<std::string, std::string> & args)
-{
-  tf2::Vector3 trans;
-  auto iter = args.find("--x");
-  if (iter != args.end()) {
-    trans.setX(std::stod(iter->second));
-  }
-  iter = args.find("--y");
-  if (iter != args.end()) {
-    trans.setY(std::stod(iter->second));
-  }
-  iter = args.find("--z");
-  if (iter != args.end()) {
-    trans.setZ(std::stod(iter->second));
-  }
-  return trans;
 }
 
 int main(int argc, char ** argv)
 {
   // Initialize ROS
   std::vector<std::string> args = rclcpp::init_and_remove_ros_arguments(argc, argv);
-  std::unordered_map<std::string, std::string> arg_map = _make_arg_map(std::move(args));
-  rclcpp::NodeOptions options;
-  std::shared_ptr<tf2_ros::StaticTransformBroadcasterNode> node;
-  tf2::Quaternion rotation;
-  tf2::Vector3 translation;
-  try {
-    rotation = _get_rotation(arg_map);
-    translation = _get_translation(arg_map);
-  } catch (std::invalid_argument & e) {
-    RCUTILS_LOG_ERROR("error parsing command line arguments");
-    _print_usage();
-    return 1;
-  }
-  std::string frame_id, child_id;
-  auto iter = arg_map.find("--frame-id");
-  if (iter == arg_map.end()) {
-    _print_usage();
-    return 1;
-  }
-  frame_id = iter->second;
-  iter = arg_map.find("--child-frame-id");
-  if (iter == arg_map.end()) {
-    _print_usage();
-    return 1;
-  }
-  child_id = iter->second;
+  bool help = false;
+  tf2::Quaternion rotation(0.0, 0.0, 0.0, 1.0);
+  tf2::Vector3 translation(0.0, 0.0, 0.0);
+  std::string frame_id;
+  std::string child_frame_id;
 
+  std::string ret = parse_args(args, help, rotation, translation, frame_id, child_frame_id);
+  if (ret != "") {
+    RCUTILS_LOG_ERROR("error parsing command line arguments: %s", ret.c_str());
+    _print_usage();
+    return 1;
+  }
+  if (help) {
+    _print_usage();
+    return 0;
+  }
+
+  rclcpp::NodeOptions options;
   // override default parameters with the desired transform
   options.parameter_overrides(
   {
@@ -190,8 +350,10 @@ int main(int argc, char ** argv)
     {"rotation.z", rotation.z()},
     {"rotation.w", rotation.w()},
     {"frame_id", frame_id},
-    {"child_frame_id", child_id},
+    {"child_frame_id", child_frame_id},
   });
+
+  std::shared_ptr<tf2_ros::StaticTransformBroadcasterNode> node;
 
   node = std::make_shared<tf2_ros::StaticTransformBroadcasterNode>(options);
 
@@ -201,7 +363,11 @@ int main(int argc, char ** argv)
     "rotation: ('%lf', '%lf', '%lf', '%lf')\nfrom '%s' to '%s'",
     translation.x(), translation.y(), translation.z(),
     rotation.x(), rotation.y(), rotation.z(), rotation.w(),
-    frame_id.c_str(), child_id.c_str());
+    frame_id.c_str(), child_frame_id.c_str());
+
   rclcpp::spin(node);
+
+  rclcpp::shutdown();
+
   return 0;
 }
